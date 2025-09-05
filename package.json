@@ -5,7 +5,8 @@
 	"scripts": {
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev",
-		"start": "wrangler dev"
+		"start": "wrangler dev",
+		"upgrade": "gh release download --repo mayswind/AriaNg --pattern 'AriaNg-*-AllInOne.zip' -O tmp.zip && unzip -jo tmp.zip -d ./public && rm tmp.zip"
 	},
 	"devDependencies": {
 		"wrangler": "^4.34.0"
