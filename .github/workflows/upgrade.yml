@@ -1,0 +1,88 @@
+name: Upgrade AriaNg AllInOne
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+
+      - name: Verify GitHub CLI
+        run: gh --version
+
+      - name: Install unzip
+        run: sudo apt-get update && sudo apt-get install -y unzip
+
+      - name: Run upgrade script
+        run: bun run upgrade
+
+      - name: Commit, push changes and open PR
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No changes detected; exiting."
+            exit 0
+          fi
+
+          # Determine latest AriaNg release tag (do not mask failures)
+          set +e
+          LATEST_TAG=$(gh release view --repo mayswind/AriaNg --json tagName --jq .tagName 2>/dev/null)
+          STATUS=$?
+          if [ $STATUS -ne 0 ] || [ -z "${LATEST_TAG:-}" ]; then
+            LATEST_TAG=$(gh release list --repo mayswind/AriaNg --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null)
+          fi
+          set -e
+          if [ -z "${LATEST_TAG:-}" ]; then
+            echo "Failed to resolve latest AriaNg release tag"
+            exit 1
+          fi
+
+          branch="build/upgrade-ariang-${LATEST_TAG}-$(date +%Y%m%d-%H%M%S)"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No staged changes to commit."
+            exit 0
+          fi
+
+          git commit -m "build: upgrade AriaNg AllInOne to ${LATEST_TAG}"
+          git push --set-upstream origin "$branch"
+
+          # Create PR and surface errors unless an open PR already exists for this branch
+          pr_create_output=$(mktemp)
+          if ! gh pr create \
+            --title "build: upgrade AriaNg AllInOne to ${LATEST_TAG}" \
+            --body "Automated upgrade to ${LATEST_TAG} via workflow dispatch." \
+            --base "${{ github.event.repository.default_branch }}" \
+            --head "$branch" 2> "$pr_create_output"; then
+            echo "gh pr create failed with the following error output:"
+            cat "$pr_create_output"
+            existing_pr=$(gh pr list --state open --head "$branch" --json number --jq '.[0].number' 2>/dev/null || true)
+            if [ -n "${existing_pr:-}" ]; then
+              echo "Pull request already exists: #${existing_pr}"
+            else
+              echo "Pull request creation failed and no existing PR was found."
+              exit 1
+            fi
+          fi
+
+
