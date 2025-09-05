@@ -1,0 +1,57 @@
+name: Upgrade AriaNg AllInOne
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+
+      - name: Verify GitHub CLI
+        run: gh --version
+
+      - name: Run upgrade script
+        run: bun run upgrade
+
+      - name: Determine latest AriaNg release tag
+        id: get_tag
+        shell: bash
+        run: |
+          set -e
+          set +e
+          LATEST_TAG=$(gh release view --repo mayswind/AriaNg --json tagName --jq .tagName 2>/dev/null)
+          STATUS=$?
+          if [ $STATUS -ne 0 ] || [ -z "${LATEST_TAG:-}" ]; then
+            LATEST_TAG=$(gh release list --repo mayswind/AriaNg --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null)
+          fi
+          set -e
+          if [ -z "${LATEST_TAG:-}" ]; then
+            echo "Failed to resolve latest AriaNg release tag"
+            exit 1
+          fi
+          echo "tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: "build/upgrade-ariang-${{ steps.get_tag.outputs.tag }}-${{ github.run_id }}"
+          commit-message: "build: upgrade AriaNg AllInOne to ${{ steps.get_tag.outputs.tag }}"
+          title: "build: upgrade AriaNg AllInOne to ${{ steps.get_tag.outputs.tag }}"
+          body: "Automated upgrade to ${{ steps.get_tag.outputs.tag }} via workflow dispatch."
+
+
